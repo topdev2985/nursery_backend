@@ -55,7 +55,7 @@ app.get('/authUri', (req, res)=>{
     oauthClient = new OAuthClient({
         clientId: process.env.CLIENTID,
         clientSecret: process.env.SECRET_KEY,
-        environment: 'sandbox',
+        environment: 'sandbox', // or production
         redirectUri: process.env.REDIRECT_URI
     });
     
