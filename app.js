@@ -1,26 +1,96 @@
 var express = require("express");
 var logger = require("morgan");
-var path=require('path');
+var path = require('path');
 var cors = require('cors');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const fileUpload = require('express-fileupload');
 
-const jwt=require('jsonwebtoken');
-const bcrypt=require('bcrypt');
-const User=require('./src/models/user');
+var request=require('request');
+
+require('dotenv').config();
+
+const OAuthClient = require('intuit-oauth');
+
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const User = require('./src/models/user');
 
 const config = require('./config');
 const indexRouter = require('./src/routes/index.routes');
 const childrenRouter = require('./src/routes/children.routes');
 const serviceRouter = require('./src/routes/service.routes');
 const attendanceRouter = require('./src/routes/attendance.routes');
-const searchRouter=require('./src/routes/search.routes');
-const invoiceRouter=require('./src/routes/invoice.route');
+const searchRouter = require('./src/routes/search.routes');
+const invoiceRouter = require('./src/routes/invoice.route');
 
-process.env.JWT_SECRET="secret nursery"
 
 var app = express();
+// process.env.JWT_SECRET="secret nursery"
+
+/**
+ * QuickBook api connect
+ */
+
+/**
+ * App Variables
+ * @type {null}
+ */
+var oauth2_token_json = null,
+    redirectUri = '';
+
+
+/**
+* Instantiate new Client
+* @type {OAuthClient}
+*/
+
+var oauthClient = null;
+
+
+/**
+ * Get the AuthorizeUri
+ */
+app.get('/authUri', (req, res)=>{
+    oauthClient = new OAuthClient({
+        clientId: process.env.CLIENTID,
+        clientSecret: process.env.SECRET_KEY,
+        environment: 'sandbox',
+        redirectUri: process.env.REDIRECT_URI
+    });
+    
+    var authUri = oauthClient.authorizeUri({ scope: [OAuthClient.scopes.Accounting], state: 'intuit-test' });
+    res.redirect(authUri);
+})
+
+
+
+/**
+ * Handle the callback to extract the `Auth Code` and exchange them for `Bearer-Tokens`
+ */
+app.get('/callback', function (req, res) {
+    console.log('dfsdf');
+    oauthClient.createToken(req.url)
+        .then(function (authResponse) {
+            oauth2_token_json = JSON.stringify(authResponse.getJson(), null, 2);
+
+            console.log("QuickBooks is connected! token: ", oauth2_token_json);
+        })
+        .catch(function (e) {
+            console.error(e);
+        });
+
+    res.send('');
+
+});
+
+
+/**
+ * end
+ */
+
+
+
 
 app.use(cors());
 
@@ -51,87 +121,87 @@ app.use('/attendanceapi', attendanceRouter);
 app.use('/searchapi', searchRouter);
 app.use('/invoiceapi', invoiceRouter);
 
-app.post('/registerapi', async(req, res)=>{
-    const user=req.body;
+app.post('/registerapi', async (req, res) => {
+    const user = req.body;
 
-    const takenUsername=await User.findOne({username:user.username});
-    if(takenUsername){
-        res.json({message:'Username has already been taken'});
+    const takenUsername = await User.findOne({ username: user.username });
+    if (takenUsername) {
+        res.json({ message: 'Username has already been taken' });
     } else {
-        user.password=await bcrypt.hash(req.body.password, 10);
+        user.password = await bcrypt.hash(req.body.password, 10);
 
-        const dbUser= new User({
-            username:user.username.toLowerCase(),
-            password:user.password
+        const dbUser = new User({
+            username: user.username.toLowerCase(),
+            password: user.password
         })
 
         dbUser.save();
-        res.json({message:"Success"});
+        res.json({ message: "Success" });
     }
 })
 
-app.post('/loginapi', (req, res)=>{
-    const userLoggingIn=req.body;
+app.post('/loginapi', (req, res) => {
+    const userLoggingIn = req.body;
 
-    User.findOne({username:userLoggingIn.username})
-    .then(dbUser=>{
-        if(!dbUser){
-            return res.json({
-                message:"Invalid Username or Password"
-            })
-        }
-        bcrypt.compare(userLoggingIn.password, dbUser.password)
-        .then(isCorrect=>{
-            if(isCorrect){
-                const payload={
-                    id:dbUser._id,
-                    username:dbUser.username
-                }
-                jwt.sign(
-                    payload,
-                    process.env.JWT_SECRET,
-                    {expiresIn:86400},
-                    (err, token)=>{
-                        if(err) {
-                            console.log(err);
-                            return res.json({message:err});
-
-                        }
-                        
-                        return res.json({
-                            message:'Success',
-                            token:"Bearer "+token
-                        })
-                    }
-                )
-            } else {
+    User.findOne({ username: userLoggingIn.username })
+        .then(dbUser => {
+            if (!dbUser) {
                 return res.json({
-                    message:"Invalid Username or Pasword"
+                    message: "Invalid Username or Password"
                 })
             }
+            bcrypt.compare(userLoggingIn.password, dbUser.password)
+                .then(isCorrect => {
+                    if (isCorrect) {
+                        const payload = {
+                            id: dbUser._id,
+                            username: dbUser.username
+                        }
+                        jwt.sign(
+                            payload,
+                            process.env.JWT_SECRET,
+                            { expiresIn: 86400 },
+                            (err, token) => {
+                                if (err) {
+                                    console.log(err);
+                                    return res.json({ message: err });
+
+                                }
+
+                                return res.json({
+                                    message: 'Success',
+                                    token: "Bearer " + token
+                                })
+                            }
+                        )
+                    } else {
+                        return res.json({
+                            message: "Invalid Username or Pasword"
+                        })
+                    }
+                })
         })
-    })
 })
 
-app.get("/isAuthUsers", verifyJWT, (req, res)=>{
-    res.json({isLoggedIn: true, username: req.user.username});
+app.get("/isAuthUsers", verifyJWT, (req, res) => {
+    res.json({ isLoggedIn: true, username: req.user.username });
 })
 
-function verifyJWT(req, res, next){
-    const token=req.headers["x-access-token"]?.split(' ')[1];
-    if(token){
-        jwt.verify(token, process.env.JWT_SECRET, (err, decoded)=>{
-            if(err)return res.json({
-                isLoggedIn:false,
-                message:"Failed to Authenticate"
+function verifyJWT(req, res, next) {
+    const token = req.headers["x-access-token"]?.split(' ')[1];
+    if (token) {
+        jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+            if (err) return res.json({
+                isLoggedIn: false,
+                message: "Failed to Authenticate"
             })
-            req.user={};
-            req.user.id=decoded.id;
-            req.user.username=decoded.username;
+            req.user = {};
+            req.user.id = decoded.id;
+            req.user.username = decoded.username;
             next()
         })
     } else {
-        res.json({message:"Incorrect Token Given", isLoggedIn:false});
+        res.json({ message: "Incorrect Token Given", isLoggedIn: false });
     }
 }
 app.get('*', function (request, response) {
