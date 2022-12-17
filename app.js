@@ -110,12 +110,17 @@ app.get('/customerspullapi', (req, res) => {
         oauthClient.environment == 'sandbox'
             ? OAuthClient.environment.sandbox
             : OAuthClient.environment.production;
+    const query="select * from Customer";
 
     oauthClient
-        .makeApiCall({ url: `${url}v3/company/${companyID}/companyinfo/${companyID}` })
+        .makeApiCall({ url: `${url}v3/company/${companyID}/query?query=${query}` })
         .then(function (authResponse) {
-            console.log(`The response for API call is :${JSON.stringify(authResponse)}`);
-            res.send(JSON.parse(authResponse.text()));
+            // console.log(`The response for API call is :${JSON.stringify(authResponse)}`);
+            let customers=[];
+            for(cus of authResponse?.queryResponse?.Customer){
+                customers.push(cus.fullyQualifiedName);
+            }
+            res.send(customers);
         })
         .catch(function (e) {
             console.error(e);
