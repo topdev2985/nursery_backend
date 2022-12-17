@@ -118,7 +118,7 @@ app.get('/customerspullapi', (req, res) => {
             // console.log(`The response for API call is :${JSON.stringify(authResponse)}`);
             let customers=[];
             console.log(authResponse);
-            for(cus of authResponse?.queryResponse?.Customer){
+            for(cus of authResponse?.json?.QueryResponse?.Customer){
                 customers.push(cus.fullyQualifiedName);
             }
             res.send(customers);
