@@ -6,8 +6,6 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const fileUpload = require('express-fileupload');
 
-var request=require('request');
-
 require('dotenv').config();
 
 const OAuthClient = require('intuit-oauth');
@@ -26,6 +24,29 @@ const invoiceRouter = require('./src/routes/invoice.route');
 
 
 var app = express();
+
+app.use(cors());
+
+app.use(fileUpload());
+
+app.use(logger('dev'));
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+
+
+const dbURI = process.env.DB_URI || config.dbURI;
+
+mongoose.connect(dbURI, {
+    useNewUrlParser: true,
+})
+    .then(() => console.log("Database connected " + dbURI))
+    .catch(err => console.log(err));
+
+mongoose.Promise = global.Promise;
+
+app.use(express.static('public'));
+// app.use(express.static('uploads'));
+
 // process.env.JWT_SECRET="secret nursery"
 
 /**
@@ -49,70 +70,63 @@ var oauthClient = null;
 
 
 /**
- * Get the AuthorizeUri
- */
-app.get('/authUri', (req, res)=>{
+* Get the AuthorizeUri
+*/
+app.get('/authUri', (req, res) => {
     oauthClient = new OAuthClient({
         clientId: process.env.CLIENTID,
         clientSecret: process.env.SECRET_KEY,
         environment: 'sandbox', // or production
         redirectUri: process.env.REDIRECT_URI
     });
-    
+
     var authUri = oauthClient.authorizeUri({ scope: [OAuthClient.scopes.Accounting], state: 'intuit-test' });
-    res.redirect(authUri);
+    res.send(authUri);
 })
 
 
 
 /**
- * Handle the callback to extract the `Auth Code` and exchange them for `Bearer-Tokens`
- */
+* Handle the callback to extract the `Auth Code` and exchange them for `Bearer-Tokens`
+*/
 app.get('/callback', function (req, res) {
-    console.log('dfsdf');
     oauthClient.createToken(req.url)
         .then(function (authResponse) {
             oauth2_token_json = JSON.stringify(authResponse.getJson(), null, 2);
-
             console.log("QuickBooks is connected! token: ", oauth2_token_json);
+            res.redirect('/login')
+        })
+        .catch(function (e) {
+            console.error(e);
+            res.redirect('/login')
+        });
+
+});
+
+app.get('/customerspullapi', (req, res) => {
+    const companyID = oauthClient.getToken().realmId;
+
+    const url =
+        oauthClient.environment == 'sandbox'
+            ? OAuthClient.environment.sandbox
+            : OAuthClient.environment.production;
+
+    oauthClient
+        .makeApiCall({ url: `${url}v3/company/${companyID}/companyinfo/${companyID}` })
+        .then(function (authResponse) {
+            console.log(`The response for API call is :${JSON.stringify(authResponse)}`);
+            res.send(JSON.parse(authResponse.text()));
         })
         .catch(function (e) {
             console.error(e);
         });
-
-    res.send('');
-
-});
+})
 
 
 /**
- * end
- */
+* end
+*/
 
-
-
-
-app.use(cors());
-
-app.use(fileUpload());
-
-app.use(logger('dev'));
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
-
-
-const dbURI = process.env.DB_URI || config.dbURI;
-
-mongoose.connect(dbURI, {
-    useNewUrlParser: true,
-})
-    .then(() => console.log("Database connected " + dbURI))
-    .catch(err => console.log(err));
-
-mongoose.Promise = global.Promise;
-
-app.use(express.static('public'));
-// app.use(express.static('uploads'));
 
 app.use('/testapi', indexRouter);
 app.use('/childrenapi', childrenRouter);
