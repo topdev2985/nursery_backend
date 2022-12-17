@@ -119,7 +119,7 @@ app.get('/customerspullapi', (req, res) => {
             let customers=[];
             console.log(authResponse);
             for(cus of authResponse?.json?.QueryResponse?.Customer){
-                customers.push(cus.fullyQualifiedName);
+                customers.push(cus);
             }
             res.send(customers);
         })
